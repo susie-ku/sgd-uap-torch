@@ -29,7 +29,7 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
     delta.data  adversarial perturbation
     losses      losses per iteration
     '''
-    _, (x_val, y_val) = next(enumerate(loader))
+    _, (index, x_val, y_val) = next(enumerate(loader))
     batch_size = len(x_val)
     if uap_init is None:
         batch_delta = torch.zeros_like(x_val) # initialize as zero vector
@@ -37,8 +37,9 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
         batch_delta = uap_init.unsqueeze(0).repeat([batch_size, 1, 1, 1])
     delta = batch_delta[0]
     losses = []
-    
-    # loss function
+    model.to('cuda')
+
+   #  loss function
     if layer_name is None:
         if loss_fn is None: loss_fn = nn.CrossEntropyLoss(reduction = 'none')
         beta = torch.cuda.FloatTensor([beta])
@@ -62,7 +63,7 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
         # perturbation step size with decay
         eps_step = eps * step_decay
         
-        for i, (x_val, y_val) in enumerate(loader):
+        for i, (index, x_val, y_val) in enumerate(loader):
 
             # for targeted UAP, switch output labels to y_target
             if y_target is not None: y_val = torch.ones(size = y_val.shape, dtype = y_val.dtype) * y_target
@@ -71,8 +72,13 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
             outputs = model(perturbed)
             
             # loss function value
-            if layer_name is None: loss = clamped_loss(outputs, y_val.cuda())
-            else: loss = main_value
+            if layer_name is None:
+                if type(outputs) ==  torch.Tensor:
+                    loss = clamped_loss(outputs, y_val.cuda())
+                else:
+                    loss = clamped_loss(outputs[0], y_val.cuda())
+            else: 
+                loss = main_value
             
             if y_target is not None: loss = -loss # minimize loss for targeted UAP
             losses.append(torch.mean(loss))

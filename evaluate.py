@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoFeatureExtractor
 
-from attack import uap_sgd
+from attacks import uap_sgd
 
 from src.datasets import (
     get_dataset,
@@ -37,20 +37,9 @@ from src.models import (
 random.seed(0)
 torch.manual_seed(42)
 
-
-@enum.unique
-class Attackers(enum.Enum):
-    Sparse = SparseSVAttack
-    PixelSparse = PixelSparseSVAttack
-    BlockSparse = BlockSparseSVAttack
-    UniversalBlockSparse = UniversalBlockSparseSVAttack
-
-
 parser = parse_handle()
 args = parser.parse_args()
 
-assert args.attacker in Attackers.__members__
-attacker_class = Attackers.__members__[args.attacker].value
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # def nested_children(m: torch.nn.Module):
@@ -94,17 +83,9 @@ def evaluate_asr():
         else:
             continue
 
-    paths_layers = []
-    for file in sorted(os.listdir('data/layers/')):
-        filename = os.fsdecode(file)
-        if not filename.startswith('vit') and not filename.startswith('deit'):
-            paths_layers.append(os.path.join('data/layers/', filename))
-        else:
-            continue
-
     dataset = IndexedDataset(
         get_dataset(
-            '/media/ssd-3t/kkuvshinova/hdd/ImageNet',
+            '/image/raid/data/datasets',
             Datasets.ImageNet
         )
     )
@@ -148,13 +129,13 @@ def evaluate_asr():
 
         weights_eval = ImageNetAttackImageTransform(
             weihts.IMAGENET1K_V1.transforms(),
-            alpha=args.alpha,
+            alpha=10/255,
             attack=attack,
             model=model_current,
-            q=q,
-            top_k=top_k[i],
-            patch_size=patch_size[i],
-            layer=attacked_layers[i]
+            q=args.q,
+            top_k=args.top_k,
+            patch_size=args.patch_size,
+            layer='sgd_uap'
         )
         eval_dataset_ = IndexedDataset(
             eval_dataset,
@@ -165,7 +146,7 @@ def evaluate_asr():
             dataset=eval_dataset_,
             batch_size=args.batch_size,
             shuffle=False,
-            drop_last=False,
+            drop_last=True,
             num_workers=4,
             pin_memory=False
         )
@@ -213,7 +194,7 @@ def evaluate_asr():
             fr = (fr_count / count).detach().numpy()
 
             print(
-                f'Accuracy for non-attacked model: {wo_attack_acc:.4f}, Accuracy for attacked model: {after_attack_acc:.4f}, ASR unbiased: {asr:.4f}, Attacked Layer: {attacked_layers[i]}, FR: {fr:.4f}, q: {q}')
+                f'Accuracy for non-attacked model: {wo_attack_acc:.4f}, Accuracy for attacked model: {after_attack_acc:.4f}, ASR unbiased: {asr:.4f}, FR: {fr:.4f}')
             
     paths_indx = []
     for file in sorted(os.listdir(args.path_to_indx)):
@@ -230,16 +211,6 @@ def evaluate_asr():
             paths_answrs.append(os.path.join(args.path_to_answers, filename))
         else:
             continue
-
-    paths_layers = []
-    for file in sorted(os.listdir('data/layers/')):
-        filename = os.fsdecode(file)
-        if filename.startswith('vit') or filename.startswith('deit'):
-            paths_layers.append(os.path.join('data/layers/', filename))
-        else:
-            continue
-
-    # multiprocessing.set_start_method('spawn')
             
     for i, (weihts, model) in enumerate(ImageNetTransformers):
         feature_extractor = AutoFeatureExtractor.from_pretrained(weihts)
@@ -273,14 +244,14 @@ def evaluate_asr():
         )
 
         feature_extractor = AttackViTFeatureExtractor(
-            alpha=args.alpha,
+            alpha=10/255,
             attack=attack,
             attack_applied=True,
             model = model_current,
-            q=q,
-            top_k=top_k,
-            patch_size=patch_size,
-            layer=attacked_layer
+            q=args.q,
+            top_k=args.top_k,
+            patch_size=args.patch_size,
+            layer='sgd_uap'
         )
         model = model.from_pretrained(weihts)
         transform = get_vit_transforms(feature_extractor)
@@ -291,7 +262,7 @@ def evaluate_asr():
             dataset=eval_dataset_,
             batch_size=args.batch_size,
             shuffle=False,
-            drop_last=False,
+            drop_last=True,
             num_workers=4,
             pin_memory=False
         )
@@ -341,9 +312,10 @@ def evaluate_asr():
             fr = fr_count / count
 
             print(
-                f'Accuracy for non-attacked model: {wo_attack_acc:.4f}, Accuracy for attacked model: {after_attack_acc:.4f}, ASR unbiased: {asr:.4f}, Attacked Layer: {attacked_layers[i]}, FR: {fr:.4f}, q: {q}')
+                f'Accuracy for non-attacked model: {wo_attack_acc:.4f}, Accuracy for attacked model: {after_attack_acc:.4f}, ASR unbiased: {asr:.4f}, FR: {fr:.4f}')
 
 
 
 if __name__ == '__main__':
+    multiprocessing.set_start_method('spawn')
     evaluate_asr()

@@ -58,7 +58,7 @@ if __name__ == '__main__':
     for weihts, model in ImageNetModels:
         weights = weihts.IMAGENET1K_V1
         model = model(weights=weights)
-        dataset = IndexedDataset(get_dataset('/media/ssd-3t/kkuvshinova/hdd/ImageNet', Datasets.ImageNet, transform=weights.transforms()))
+        dataset = IndexedDataset(get_dataset('/image/raid/data/datasets', Datasets.ImageNet, transform=weights.transforms()))
         
         acc, idxs_correct, prediction_wo_attack, idxs = evaluate(model, dataset, args.batch_size)
         file_name = f'{Datasets.ImageNet}_{weights.__class__.__name__}_{acc * 100: .2f}.csv'
@@ -74,7 +74,7 @@ if __name__ == '__main__':
         model = model.from_pretrained(weihts)
 
         transform = get_vit_transforms(feature_extractor)
-        dataset = IndexedDataset(get_dataset('/media/ssd-3t/kkuvshinova/hdd/ImageNet', Datasets.ImageNet, transform=transform))
+        dataset = IndexedDataset(get_dataset('/image/raid/data/datasets', Datasets.ImageNet, transform=transform))
         acc, idxs_correct, prediction_wo_attack, idxs = evaluate(model, dataset, args.batch_size)
         
         file_name = f"{Datasets.ImageNet}_{weihts.split('/')[-1]}_{acc * 100: .2f}.csv"

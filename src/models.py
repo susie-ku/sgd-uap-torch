@@ -118,7 +118,7 @@ class ImageNetAttackImageTransform(ImageClassification):
         # attack_.save(f"{args.path_to_images}/{self.model}_{self.layer}_attack_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
         img = torch.clamp(img, 0., 1.)
         image = T.ToPILImage()(img)
-        image.save(f"with_trunc_img_a_{self.model}_q={self.q}_alpha={self.alpha}.jpeg")
+        image.save(f"{self.model}.jpeg")
         # img_a = from_torch_to_pil(img)
         # img_a.save(f"{args.path_to_images}/{self.model}_{self.layer}_img_a_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
         img = F.normalize(img, mean=self.mean, std=self.std)
@@ -171,7 +171,7 @@ class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMi
             image += torch.squeeze(self.attack) * self.alpha
         image = torch.clamp(image, 0., 1.)
         image = T.ToPILImage()(image)
-        image.save(f"with_trunc_img_a_{self.model}_q={self.q}_alpha={self.alpha}.jpeg")
+        image.save(f"{self.model}.jpeg")
         attack_ = T.ToPILImage()(torch.squeeze(self.attack))
         # attack_.save(f"with_trunc_{self.model}_q={self.q}_alpha={self.alpha}.jpeg")
         return image
