@@ -89,6 +89,7 @@ class ImageNetAttackImageTransform(ImageClassification):
         if not isinstance(img, torch.Tensor):
             img = F.pil_to_tensor(img)
         img = F.convert_image_dtype(img, torch.float)
+        img = F.normalize(img, mean=self.mean, std=self.std)
         if self.attack.shape[-1] > self.crop_size[0][0]:
             attack = F.center_crop(self.attack, self.crop_size[0][0])
             img += attack * self.alpha
@@ -121,7 +122,7 @@ class ImageNetAttackImageTransform(ImageClassification):
         image.save(f"{self.model}.jpeg")
         # img_a = from_torch_to_pil(img)
         # img_a.save(f"{args.path_to_images}/{self.model}_{self.layer}_img_a_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
-        img = F.normalize(img, mean=self.mean, std=self.std)
+#         img = F.normalize(img, mean=self.mean, std=self.std)
         return img
 
 class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMixin):
@@ -205,10 +206,12 @@ class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMi
         # transformations (resizing + normalization)
         if self.do_resize and self.size is not None:
             images = [self.resize(image=image, size=self.size, resample=self.resample) for image in images]
-        if self.attack_applied:
-            images = [self.apply_attack(image=image) for image in images]
         if self.do_normalize:
             images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
+        if self.attack_applied:
+            images = [self.apply_attack(image=image) for image in images]
+#         if self.do_normalize:
+#             images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
 
         # return as BatchFeature
         data = {"pixel_values": images}
