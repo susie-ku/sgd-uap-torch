@@ -149,7 +149,7 @@ class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMi
     ):
         super().__init__(**kwargs)
         self.alpha = alpha
-        self.attack = attack
+        self.attack = attack.cuda()
         self.model = model
         self.q = q
         self.top_k = top_k
@@ -165,6 +165,7 @@ class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMi
 
     def apply_attack(self, image):
         image = T.ToTensor()(image).cuda()
+        image = image.permute(1, 0, 2)
         if self.attack.shape[-1] > self.size:
             attack = F.center_crop(self.attack, self.size)
             image += torch.squeeze(attack) * self.alpha

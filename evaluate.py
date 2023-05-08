@@ -85,7 +85,7 @@ def evaluate_asr():
 
     dataset = IndexedDataset(
         get_dataset(
-            '/image/raid/data/datasets',
+            '/workspace/raid/data/datasets/imagenet/val/val',
             Datasets.ImageNet
         )
     )

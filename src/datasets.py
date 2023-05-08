@@ -30,8 +30,8 @@ def get_vit_transforms(feature_extractor):
     ])
 
 
-def get_dataset(path_to_data, dataset_name, transform=None):
-    path = os.path.join(path_to_data, dataset_name)
+def get_dataset(path, dataset_name, transform=None):
+    # path = os.path.join(path_to_data, dataset_name)
     if dataset_name == Datasets.CIFAR10:
         dataset = datasets.CIFAR10(path, train=False, download=True, transform=transform)
     elif dataset_name == Datasets.CIFAR100:
