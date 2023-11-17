@@ -128,14 +128,16 @@ def evaluate_asr():
             model,
             train_loader,
             nb_epoch=10,
-            eps=10/255,
+            eps=1,
             beta=12,
             step_decay=0.8,
             y_target=None,
             loss_fn=None, 
-            layer_name=attacked_layers[i], 
+            layer_name=None, 
             uap_init=None
         )
+        print(attack)
+        print(torch.count_nonzero(attack))
 
         weights_eval = ImageNetAttackImageTransform(
             weihts.IMAGENET1K_V1.transforms(),
@@ -249,7 +251,7 @@ def evaluate_asr():
             step_decay=0.8,
             y_target=None,
             loss_fn=None, 
-            layer_name='vit.encoder.layer.0', 
+            layer_name=None, 
             uap_init=None
         )
         print(attack)

@@ -75,7 +75,7 @@ class ImageNetAttackImageTransform(ImageClassification):
             interpolation=transform.interpolation
         )
         self.alpha = alpha
-        self.attack = torch.squeeze(attack.cpu())
+        self.attack = torch.squeeze(attack).cuda()
         self.model = model
         self.q = q
         self.top_k = top_k
@@ -88,42 +88,175 @@ class ImageNetAttackImageTransform(ImageClassification):
         img = F.center_crop(img, self.crop_size[0][0])
         if not isinstance(img, torch.Tensor):
             img = F.pil_to_tensor(img)
-        img = F.convert_image_dtype(img, torch.float)
-        img = F.normalize(img, mean=self.mean, std=self.std)
-        if self.attack.shape[-1] > self.crop_size[0][0]:
-            attack = F.center_crop(self.attack, self.crop_size[0][0])
-            img += attack * self.alpha
-        elif self.attack.shape[-1] < self.crop_size[0][0]:
-            try:
-                img += self.attack * self.alpha
-            except RuntimeError:
-                try:
-                    attack = torch.nn.functional.pad(input=self.attack, pad=(
-                        (self.crop_size[0][0] - self.attack.shape[1]) // 2,
-                        (self.crop_size[0][0] - self.attack.shape[1]) // 2,
-                        (self.crop_size[0][0] - self.attack.shape[2]) // 2,
-                        (self.crop_size[0][0] - self.attack.shape[2]) // 2
-                    ), mode='constant', value=0)
-                except RuntimeError:
-                    attack = torch.nn.functional.pad(input=self.attack, pad=(
-                        (self.crop_size[0][0] - self.attack.shape[1]) // 2,
-                        (self.crop_size[0][0] - self.attack.shape[1]) // 2 + 1,
-                        (self.crop_size[0][0] - self.attack.shape[2]) // 2,
-                        (self.crop_size[0][0] - self.attack.shape[2]) // 2 + 1
-                    ), mode='constant', value=0)
-                img += attack * self.alpha
+        img = F.convert_image_dtype(img, torch.float).cuda()
+        if self.crop_size[0][0] != self.attack.shape[1]:
+            attack_ = F.center_crop(self.attack, self.crop_size[0][0])
+            img += attack_ * self.alpha
         else:
             img += self.attack * self.alpha
-        
-        # attack_ = from_torch_to_pil(self.attack)
-        # attack_.save(f"{args.path_to_images}/{self.model}_{self.layer}_attack_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
+
         img = torch.clamp(img, 0., 1.)
-        attack = T.ToPILImage()(self.attack)
-        attack.save(f"{self.model}.jpeg")
-        # img_a = from_torch_to_pil(img)
-        # img_a.save(f"{args.path_to_images}/{self.model}_{self.layer}_img_a_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
-#         img = F.normalize(img, mean=self.mean, std=self.std)
+        img = F.normalize(img, mean=self.mean, std=self.std)
         return img
+
+class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMixin):
+
+    model_input_names = ['pixel_values']
+
+    def __init__(
+        self,
+        alpha,
+        attack,
+        model,
+        q,
+        top_k,
+        patch_size,
+        layer,
+        attack_applied=True,
+        do_resize=True,
+        size=224,
+        resample=Image.BILINEAR,
+        do_normalize=True,
+        image_mean=None,
+        image_std=None,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.alpha = alpha
+        self.attack = torch.squeeze(attack)
+        self.model = model
+        self.q = q
+        self.top_k = top_k
+        self.patch_size = patch_size
+        self.layer = layer
+        self.attack_applied = attack_applied if attack_applied is True else False
+        self.do_resize = do_resize
+        self.size = size
+        self.resample = resample
+        self.do_normalize = do_normalize
+        self.image_mean = image_mean if image_mean is not None else IMAGENET_STANDARD_MEAN
+        self.image_std = image_std if image_std is not None else IMAGENET_STANDARD_STD
+
+    def apply_attack(self, image):
+        image = T.ToTensor()(image).cuda()
+        if self.size != self.attack.shape[-1]:
+            attack_ = F.center_crop(self.attack, self.size)
+            image += attack_ * self.alpha
+        else:
+            image += self.attack * self.alpha
+        image = torch.clamp(image, 0., 1.)
+        image = T.ToPILImage()(image)
+        return image
+
+    def __call__(self, images, return_tensors, **kwargs):
+
+        # Input type checking for clearer error
+        valid_images = False
+
+        # Check that images has a valid type
+        if isinstance(images, (Image.Image, np.ndarray)) or is_torch_tensor(images):
+            valid_images = True
+        elif isinstance(images, (list, tuple)):
+            if len(images) == 0 or isinstance(images[0], (Image.Image, np.ndarray)) or is_torch_tensor(images[0]):
+                valid_images = True
+
+        if not valid_images:
+            raise ValueError(
+                "Images must of type `PIL.Image.Image`, `np.ndarray` or `torch.Tensor` (single example), "
+                "`List[PIL.Image.Image]`, `List[np.ndarray]` or `List[torch.Tensor]` (batch of examples)."
+            )
+
+        is_batched = bool(
+            isinstance(images, (list, tuple))
+            and (isinstance(images[0], (Image.Image, np.ndarray)) or is_torch_tensor(images[0]))
+        )
+
+        if not is_batched:
+            images = [images]
+
+        # transformations (resizing + normalization)
+        if self.do_resize and self.size is not None:
+            images = [self.resize(image=image, size=self.size, resample=self.resample) for image in images]
+        if self.attack_applied:
+            images = [self.apply_attack(image=image) for image in images]
+        if self.do_normalize:
+            images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
+
+        # return as BatchFeature
+        data = {"pixel_values": images}
+        encoded_inputs = BatchFeature(data=data, tensor_type=return_tensors)
+
+        return encoded_inputs
+
+# class ImageNetAttackImageTransform(ImageClassification):
+#     def __init__(
+#         self,
+#         transform,
+#         alpha,
+#         attack,
+#         model,
+#         q,
+#         top_k,
+#         patch_size,
+#         layer
+#     ):
+#         super().__init__(
+#             crop_size=transform.crop_size, 
+#             resize_size=transform.resize_size, 
+#             mean=transform.mean,
+#             std=transform.std, 
+#             interpolation=transform.interpolation
+#         )
+#         self.alpha = alpha
+#         self.attack = torch.squeeze(attack.cpu())
+#         self.model = model
+#         self.q = q
+#         self.top_k = top_k
+#         self.patch_size = patch_size
+#         self.layer = layer
+
+#     def forward(self, img):
+#         from_torch_to_pil = T.ToPILImage()
+#         img = F.resize(img, self.resize_size[0][0], interpolation=self.interpolation)
+#         img = F.center_crop(img, self.crop_size[0][0])
+#         if not isinstance(img, torch.Tensor):
+#             img = F.pil_to_tensor(img)
+#         img = F.convert_image_dtype(img, torch.float)
+#         img = F.normalize(img, mean=self.mean, std=self.std)
+#         if self.attack.shape[-1] > self.crop_size[0][0]:
+#             attack = F.center_crop(self.attack, self.crop_size[0][0])
+#             img += attack * self.alpha
+#         elif self.attack.shape[-1] < self.crop_size[0][0]:
+#             try:
+#                 img += self.attack * self.alpha
+#             except RuntimeError:
+#                 try:
+#                     attack = torch.nn.functional.pad(input=self.attack, pad=(
+#                         (self.crop_size[0][0] - self.attack.shape[1]) // 2,
+#                         (self.crop_size[0][0] - self.attack.shape[1]) // 2,
+#                         (self.crop_size[0][0] - self.attack.shape[2]) // 2,
+#                         (self.crop_size[0][0] - self.attack.shape[2]) // 2
+#                     ), mode='constant', value=0)
+#                 except RuntimeError:
+#                     attack = torch.nn.functional.pad(input=self.attack, pad=(
+#                         (self.crop_size[0][0] - self.attack.shape[1]) // 2,
+#                         (self.crop_size[0][0] - self.attack.shape[1]) // 2 + 1,
+#                         (self.crop_size[0][0] - self.attack.shape[2]) // 2,
+#                         (self.crop_size[0][0] - self.attack.shape[2]) // 2 + 1
+#                     ), mode='constant', value=0)
+#                 img += attack * self.alpha
+#         else:
+#             img += self.attack * self.alpha
+        
+#         # attack_ = from_torch_to_pil(self.attack)
+#         # attack_.save(f"{args.path_to_images}/{self.model}_{self.layer}_attack_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
+#         img = torch.clamp(img, 0., 1.)
+#         attack = T.ToPILImage()(self.attack)
+#         attack.save(f"{self.model}.jpeg")
+#         # img_a = from_torch_to_pil(img)
+#         # img_a.save(f"{args.path_to_images}/{self.model}_{self.layer}_img_a_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
+# #         img = F.normalize(img, mean=self.mean, std=self.std)
+#         return img
 
 # class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMixin):
 
@@ -220,93 +353,93 @@ class ImageNetAttackImageTransform(ImageClassification):
 
 #         return encoded_inputs
 
-class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMixin):
+# class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMixin):
 
-    model_input_names = ['pixel_values']
+#     model_input_names = ['pixel_values']
 
-    def __init__(
-        self,
-        alpha,
-        attack,
-        model,
-        q,
-        top_k,
-        patch_size,
-        layer,
-        attack_applied=True,
-        do_resize=True,
-        size=224,
-        resample=Image.BILINEAR,
-        do_normalize=True,
-        image_mean=None,
-        image_std=None,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.alpha = alpha
-        self.attack = attack.cuda()
-        self.model = model
-        self.q = q
-        self.top_k = top_k
-        self.patch_size = patch_size
-        self.layer = layer
-        self.attack_applied = attack_applied if attack_applied is True else False
-        self.do_resize = do_resize
-        self.size = size
-        self.resample = resample
-        self.do_normalize = do_normalize
-        self.image_mean = image_mean if image_mean is not None else IMAGENET_STANDARD_MEAN
-        self.image_std = image_std if image_std is not None else IMAGENET_STANDARD_STD
+#     def __init__(
+#         self,
+#         alpha,
+#         attack,
+#         model,
+#         q,
+#         top_k,
+#         patch_size,
+#         layer,
+#         attack_applied=True,
+#         do_resize=True,
+#         size=224,
+#         resample=Image.BILINEAR,
+#         do_normalize=True,
+#         image_mean=None,
+#         image_std=None,
+#         **kwargs
+#     ):
+#         super().__init__(**kwargs)
+#         self.alpha = alpha
+#         self.attack = attack.cuda()
+#         self.model = model
+#         self.q = q
+#         self.top_k = top_k
+#         self.patch_size = patch_size
+#         self.layer = layer
+#         self.attack_applied = attack_applied if attack_applied is True else False
+#         self.do_resize = do_resize
+#         self.size = size
+#         self.resample = resample
+#         self.do_normalize = do_normalize
+#         self.image_mean = image_mean if image_mean is not None else IMAGENET_STANDARD_MEAN
+#         self.image_std = image_std if image_std is not None else IMAGENET_STANDARD_STD
 
-    def apply_attack(self, image):
-        image = T.ToTensor()(image).cuda()
-        image += torch.squeeze(self.attack) * self.alpha
-        image = torch.clamp(image, 0., 1.)
-        image = T.ToPILImage()(image)
-        # image.save(f"{args.path_to_images}/{self.model}_{self.layer}_img_a_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
-        attack_ = T.ToPILImage()(torch.squeeze(self.attack))
-        # attack_.save(f"{args.path_to_images}/{self.model}_{self.layer}_attack_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
-        return image
+#     def apply_attack(self, image):
+#         image = T.ToTensor()(image).cuda()
+#         image += torch.squeeze(self.attack) * self.alpha
+#         image = torch.clamp(image, 0., 1.)
+#         image = T.ToPILImage()(image)
+#         # image.save(f"{args.path_to_images}/{self.model}_{self.layer}_img_a_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
+#         attack_ = T.ToPILImage()(torch.squeeze(self.attack))
+#         # attack_.save(f"{args.path_to_images}/{self.model}_{self.layer}_attack_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
+#         return image
 
-    def __call__(self, images, return_tensors, **kwargs):
+#     def __call__(self, images, return_tensors, **kwargs):
 
-        # Input type checking for clearer error
-        valid_images = False
+#         # Input type checking for clearer error
+#         valid_images = False
 
-        # Check that images has a valid type
-        if isinstance(images, (Image.Image, np.ndarray)) or is_torch_tensor(images):
-            valid_images = True
-        elif isinstance(images, (list, tuple)):
-            if len(images) == 0 or isinstance(images[0], (Image.Image, np.ndarray)) or is_torch_tensor(images[0]):
-                valid_images = True
+#         # Check that images has a valid type
+#         if isinstance(images, (Image.Image, np.ndarray)) or is_torch_tensor(images):
+#             valid_images = True
+#         elif isinstance(images, (list, tuple)):
+#             if len(images) == 0 or isinstance(images[0], (Image.Image, np.ndarray)) or is_torch_tensor(images[0]):
+#                 valid_images = True
 
-        if not valid_images:
-            raise ValueError(
-                "Images must of type `PIL.Image.Image`, `np.ndarray` or `torch.Tensor` (single example), "
-                "`List[PIL.Image.Image]`, `List[np.ndarray]` or `List[torch.Tensor]` (batch of examples)."
-            )
+#         if not valid_images:
+#             raise ValueError(
+#                 "Images must of type `PIL.Image.Image`, `np.ndarray` or `torch.Tensor` (single example), "
+#                 "`List[PIL.Image.Image]`, `List[np.ndarray]` or `List[torch.Tensor]` (batch of examples)."
+#             )
 
-        is_batched = bool(
-            isinstance(images, (list, tuple))
-            and (isinstance(images[0], (Image.Image, np.ndarray)) or is_torch_tensor(images[0]))
-        )
+#         is_batched = bool(
+#             isinstance(images, (list, tuple))
+#             and (isinstance(images[0], (Image.Image, np.ndarray)) or is_torch_tensor(images[0]))
+#         )
 
-        if not is_batched:
-            images = [images]
+#         if not is_batched:
+#             images = [images]
 
-        # transformations (resizing + normalization)
-        if self.do_resize and self.size is not None:
-            images = [self.resize(image=image, size=self.size, resample=self.resample) for image in images]
-        if self.attack_applied:
-            images = [self.apply_attack(image=image) for image in images]
-        if self.do_normalize:
-            images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
+#         # transformations (resizing + normalization)
+#         if self.do_resize and self.size is not None:
+#             images = [self.resize(image=image, size=self.size, resample=self.resample) for image in images]
+#         if self.attack_applied:
+#             images = [self.apply_attack(image=image) for image in images]
+#         if self.do_normalize:
+#             images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
 
-        # return as BatchFeature
-        data = {"pixel_values": images}
-        encoded_inputs = BatchFeature(data=data, tensor_type=return_tensors)
+#         # return as BatchFeature
+#         data = {"pixel_values": images}
+#         encoded_inputs = BatchFeature(data=data, tensor_type=return_tensors)
 
-        return encoded_inputs
+#         return encoded_inputs
         
 
 ImageNetModels = [

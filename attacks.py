@@ -1,6 +1,7 @@
 import math
 import torch
 import torch.nn as nn
+from transformers import ViTForImageClassification
 
 
 '''
@@ -51,7 +52,11 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
     else:
         def get_norm(self, forward_input, forward_output):
             global main_value
-            main_value = torch.norm(forward_output, p = 'fro')
+            # print(type(forward_output))
+            if isinstance(forward_output, tuple):
+                main_value = torch.norm(forward_output[0], p = 'fro')
+            else:
+                main_value = torch.norm(forward_output, p = 'fro')
         for name, layer in model.named_modules():
             if name == layer_name:
                 handle = layer.register_forward_hook(get_norm)
@@ -69,7 +74,10 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
             if y_target is not None: y_val = torch.ones(size = y_val.shape, dtype = y_val.dtype) * y_target
             
             perturbed = torch.clamp((x_val + batch_delta).cuda(), 0, 1)
-            outputs = model(perturbed)
+            if isinstance(model, ViTForImageClassification):
+                outputs = model(perturbed)
+            else:
+                outputs = model(perturbed)
             
             # loss function value
             if layer_name is None:
