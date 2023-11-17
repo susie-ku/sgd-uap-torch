@@ -18,7 +18,7 @@ from torchvision.models import (
     resnet101,
     resnet152,
     # resnet50,
-    vgg19,
+    # vgg19,
     wide_resnet101_2,
     # wide_resnet50_2
 )
@@ -32,7 +32,7 @@ from torchvision.models import (
     ResNet101_Weights,
     ResNet152_Weights,
     # ResNet50_Weights,
-    VGG19_Weights,
+    # VGG19_Weights,
     Wide_ResNet101_2_Weights,
     # Wide_ResNet50_2_Weights
 )
@@ -125,6 +125,101 @@ class ImageNetAttackImageTransform(ImageClassification):
 #         img = F.normalize(img, mean=self.mean, std=self.std)
         return img
 
+# class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMixin):
+
+#     model_input_names = ['pixel_values']
+
+#     def __init__(
+#         self,
+#         alpha,
+#         attack,
+#         model,
+#         q,
+#         top_k,
+#         patch_size,
+#         layer,
+#         attack_applied=True,
+#         do_resize=True,
+#         size=224,
+#         resample=Image.BILINEAR,
+#         do_normalize=True,
+#         image_mean=None,
+#         image_std=None,
+#         **kwargs
+#     ):
+#         super().__init__(**kwargs)
+#         self.alpha = alpha
+#         self.attack = attack.cuda()
+#         self.model = model
+#         self.q = q
+#         self.top_k = top_k
+#         self.patch_size = patch_size
+#         self.layer = layer
+#         self.attack_applied = attack_applied if attack_applied is True else False
+#         self.do_resize = do_resize
+#         self.size = size
+#         self.resample = resample
+#         self.do_normalize = do_normalize
+#         self.image_mean = image_mean if image_mean is not None else IMAGENET_STANDARD_MEAN
+#         self.image_std = image_std if image_std is not None else IMAGENET_STANDARD_STD
+
+#     def apply_attack(self, image):
+#         image = T.ToTensor()(image).cuda()
+#         image = image.permute(1, 0, 2)
+#         if self.attack.shape[-1] > self.size:
+#             attack = F.center_crop(self.attack, self.size)
+#             image += torch.squeeze(attack) * self.alpha
+#         else:
+#             image += torch.squeeze(self.attack) * self.alpha
+#         image = torch.clamp(image, 0., 1.)
+#         attack = T.ToPILImage()(self.attack)
+#         attack.save(f"{self.model}.jpeg")
+#         # attack_ = T.ToPILImage()(torch.squeeze(self.attack))
+#         # attack_.save(f"with_trunc_{self.model}_q={self.q}_alpha={self.alpha}.jpeg")
+#         return image
+
+#     def __call__(self, images, return_tensors, **kwargs):
+
+#         # Input type checking for clearer error
+#         valid_images = False
+
+#         # Check that images has a valid type
+#         if isinstance(images, (Image.Image, np.ndarray)) or is_torch_tensor(images):
+#             valid_images = True
+#         elif isinstance(images, (list, tuple)):
+#             if len(images) == 0 or isinstance(images[0], (Image.Image, np.ndarray)) or is_torch_tensor(images[0]):
+#                 valid_images = True
+
+#         if not valid_images:
+#             raise ValueError(
+#                 "Images must of type `PIL.Image.Image`, `np.ndarray` or `torch.Tensor` (single example), "
+#                 "`List[PIL.Image.Image]`, `List[np.ndarray]` or `List[torch.Tensor]` (batch of examples)."
+#             )
+
+#         is_batched = bool(
+#             isinstance(images, (list, tuple))
+#             and (isinstance(images[0], (Image.Image, np.ndarray)) or is_torch_tensor(images[0]))
+#         )
+
+#         if not is_batched:
+#             images = [images]
+
+#         # transformations (resizing + normalization)
+#         if self.do_resize and self.size is not None:
+#             images = [self.resize(image=image, size=self.size, resample=self.resample) for image in images]
+#         if self.do_normalize:
+#             images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
+#         if self.attack_applied:
+#             images = [self.apply_attack(image=image) for image in images]
+# #         if self.do_normalize:
+# #             images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
+
+#         # return as BatchFeature
+#         data = {"pixel_values": images}
+#         encoded_inputs = BatchFeature(data=data, tensor_type=return_tensors)
+
+#         return encoded_inputs
+
 class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMixin):
 
     model_input_names = ['pixel_values']
@@ -165,17 +260,12 @@ class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMi
 
     def apply_attack(self, image):
         image = T.ToTensor()(image).cuda()
-        image = image.permute(1, 0, 2)
-        if self.attack.shape[-1] > self.size:
-            attack = F.center_crop(self.attack, self.size)
-            image += torch.squeeze(attack) * self.alpha
-        else:
-            image += torch.squeeze(self.attack) * self.alpha
+        image += torch.squeeze(self.attack) * self.alpha
         image = torch.clamp(image, 0., 1.)
-        attack = T.ToPILImage()(self.attack)
-        attack.save(f"{self.model}.jpeg")
-        # attack_ = T.ToPILImage()(torch.squeeze(self.attack))
-        # attack_.save(f"with_trunc_{self.model}_q={self.q}_alpha={self.alpha}.jpeg")
+        image = T.ToPILImage()(image)
+        # image.save(f"{args.path_to_images}/{self.model}_{self.layer}_img_a_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
+        attack_ = T.ToPILImage()(torch.squeeze(self.attack))
+        # attack_.save(f"{args.path_to_images}/{self.model}_{self.layer}_attack_{Datasets.ImageNet}_q={self.q}_top-k={self.top_k}_alpha={self.alpha}_patch_size={self.patch_size}.jpeg")
         return image
 
     def __call__(self, images, return_tensors, **kwargs):
@@ -207,12 +297,10 @@ class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMi
         # transformations (resizing + normalization)
         if self.do_resize and self.size is not None:
             images = [self.resize(image=image, size=self.size, resample=self.resample) for image in images]
-        if self.do_normalize:
-            images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
         if self.attack_applied:
             images = [self.apply_attack(image=image) for image in images]
-#         if self.do_normalize:
-#             images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
+        if self.do_normalize:
+            images = [self.normalize(image=image, mean=self.image_mean, std=self.image_std) for image in images]
 
         # return as BatchFeature
         data = {"pixel_values": images}
@@ -230,7 +318,7 @@ ImageNetModels = [
     (ResNet101_Weights, resnet101),
     (ResNet152_Weights, resnet152),
     # (ResNet50_Weights, resnet50),
-    (VGG19_Weights, vgg19),
+    # (VGG19_Weights, vgg19),
     (Wide_ResNet101_2_Weights, wide_resnet101_2),
     # (Wide_ResNet50_2_Weights, wide_resnet50_2)
 ]

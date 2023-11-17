@@ -67,6 +67,18 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def evaluate_asr():
 
+    dataset = IndexedDataset(
+        get_dataset(
+            args.path_to_imagenet,
+            Datasets.ImageNet
+        )
+    )
+    train_dataset, eval_dataset = torch.utils.data.random_split(
+        dataset,
+        [args.attack_train_split_num, len(dataset) - args.attack_train_split_num],
+        generator=torch.Generator().manual_seed(42)
+    )
+
     paths_indx = []
     for file in sorted(os.listdir(args.path_to_indx)):
         filename = os.fsdecode(file)
@@ -83,17 +95,15 @@ def evaluate_asr():
         else:
             continue
 
-    dataset = IndexedDataset(
-        get_dataset(
-            '/workspace/raid/data/datasets/imagenet/val/val',
-            Datasets.ImageNet
-        )
-    )
-    train_dataset, eval_dataset = torch.utils.data.random_split(
-        dataset,
-        [args.attack_train_split_num, len(dataset) - args.attack_train_split_num],
-        generator=torch.Generator().manual_seed(42)
-    )
+    attacked_layers = [
+        'features.denseblock2.denselayer2',
+        'features.2.1.block',
+        'features.1.0.block',
+        'maxpool2',
+        'layer2.3',
+        'layer2.3',
+        'layer3.1'
+    ]
 
     for i, (weihts, model) in enumerate(ImageNetModels):
         weights = weihts.IMAGENET1K_V1
@@ -123,7 +133,7 @@ def evaluate_asr():
             step_decay=0.8,
             y_target=None,
             loss_fn=None, 
-            layer_name=None, 
+            layer_name=attacked_layers[i], 
             uap_init=None
         )
 
@@ -239,9 +249,10 @@ def evaluate_asr():
             step_decay=0.8,
             y_target=None,
             loss_fn=None, 
-            layer_name=None, 
+            layer_name='vit.encoder.layer.0', 
             uap_init=None
         )
+        print(attack)
 
         feature_extractor = AttackViTFeatureExtractor(
             alpha=10/255,
@@ -292,7 +303,7 @@ def evaluate_asr():
                     [idx in correct_idxs for idx in index]
                 )
 
-                after_attack_prediction = victim.predict(batch).cpu()
+                after_attack_prediction = model(batch).logits.argmax(dim=-1).cpu()
                 wo_attack_pred = torch.squeeze(torch.tensor(wo_attack_prediction.set_index('pic_index').iloc[index].values))
                 fr = after_attack_prediction != wo_attack_pred
                 asr = after_attack_prediction != label
