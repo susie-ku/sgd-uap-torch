@@ -30,6 +30,7 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
     delta.data  adversarial perturbation
     losses      losses per iteration
     '''
+    model.eval()
     print(model.training)
     _, (index, x_val, y_val) = next(enumerate(loader))
     batch_size = len(x_val)
@@ -85,11 +86,12 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
                     loss = clamped_loss(outputs[0], y_val.cuda())
             else: 
                 loss = main_value
+            print(loss)
             
             if y_target is not None: loss = -loss # minimize loss for targeted UAP
             losses.append(torch.mean(loss))
             loss.backward()
-            batch_delta.grad.data.zero_()
+            # batch_delta.grad.data.zero_()
             batch_delta.data = delta.unsqueeze(0).repeat([x_val.shape[0], 1, 1, 1])
             
             # batch update

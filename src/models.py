@@ -52,6 +52,7 @@ from src.datasets import Datasets
 
 parser = parse_handle()
 args = parser.parse_args()
+from_torch_to_pil = T.ToPILImage()
 
 os.makedirs(args.path_to_images, exist_ok=True)
 
@@ -83,9 +84,10 @@ class ImageNetAttackImageTransform(ImageClassification):
         self.layer = layer
 
     def forward(self, img):
-        from_torch_to_pil = T.ToPILImage()
         img = F.resize(img, self.resize_size[0][0], interpolation=self.interpolation)
         img = F.center_crop(img, self.crop_size[0][0])
+        attack_ = from_torch_to_pil(self.attack)
+        attack_.save(f"attack_{self.model}.jpeg")
         if not isinstance(img, torch.Tensor):
             img = F.pil_to_tensor(img)
         img = F.convert_image_dtype(img, torch.float).cuda()
@@ -123,7 +125,7 @@ class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMi
     ):
         super().__init__(**kwargs)
         self.alpha = alpha
-        self.attack = torch.squeeze(attack)
+        self.attack = torch.squeeze(attack).cuda()
         self.model = model
         self.q = q
         self.top_k = top_k
@@ -139,6 +141,8 @@ class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMi
 
     def apply_attack(self, image):
         image = T.ToTensor()(image).cuda()
+        attack_ = from_torch_to_pil(self.attack)
+        attack_.save(f"attack_{self.model}.jpeg")
         if self.size != self.attack.shape[-1]:
             attack_ = F.center_crop(self.attack, self.size)
             image += attack_ * self.alpha
@@ -146,6 +150,7 @@ class AttackViTFeatureExtractor(FeatureExtractionMixin, ImageFeatureExtractionMi
             image += self.attack * self.alpha
         image = torch.clamp(image, 0., 1.)
         image = T.ToPILImage()(image)
+        image.save(f"img_{self.model}.jpeg")
         return image
 
     def __call__(self, images, return_tensors, **kwargs):

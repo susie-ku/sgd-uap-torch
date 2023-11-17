@@ -129,7 +129,7 @@ def evaluate_asr():
             model_train,
             train_loader,
             nb_epoch=10,
-            eps=1,
+            eps=10/255,
             beta=12,
             step_decay=0.8,
             y_target=None,
@@ -142,7 +142,7 @@ def evaluate_asr():
 
         weights_eval = ImageNetAttackImageTransform(
             weihts.IMAGENET1K_V1.transforms(),
-            alpha=10/255,
+            alpha=1,
             attack=attack,
             model=model_current,
             q=args.q,
@@ -228,7 +228,7 @@ def evaluate_asr():
             
     for i, (weihts, model) in enumerate(ImageNetTransformers):
         feature_extractor = AutoFeatureExtractor.from_pretrained(weihts)
-        model = model.from_pretrained(weihts)
+        model_train = model.from_pretrained(weihts)
         transform = get_vit_transforms(feature_extractor)
         train_dataset_ = TransformerIndexedDataset(train_dataset, Datasets.ImageNet)
         train_dataset_.dataset.transform = transform
@@ -245,7 +245,7 @@ def evaluate_asr():
         )
         
         attack, _ = uap_sgd(
-            model,
+            model_train,
             train_loader,
             nb_epoch=10,
             eps=10/255,
@@ -259,7 +259,7 @@ def evaluate_asr():
         print(attack)
 
         feature_extractor = AttackViTFeatureExtractor(
-            alpha=10/255,
+            alpha=1,
             attack=attack,
             attack_applied=True,
             model = model_current,
@@ -268,7 +268,7 @@ def evaluate_asr():
             patch_size=args.patch_size,
             layer='sgd_uap'
         )
-        model = model.from_pretrained(weihts)
+        model_eval = model.from_pretrained(weihts)
         transform = get_vit_transforms(feature_extractor)
         eval_dataset_ = TransformerIndexedDataset(eval_dataset, Datasets.ImageNet)
         eval_dataset_.dataset.transform = transform
@@ -282,7 +282,8 @@ def evaluate_asr():
             pin_memory=False
         )
 
-        model.eval()
+        model_eval.eval()
+        model_eval.to('cuda')
 
         with torch.no_grad():
             wo_attack_correct_count = 0
@@ -301,13 +302,13 @@ def evaluate_asr():
                 #     break
                 batch = batch.cuda()
                 index = index.tolist()
-                model = model.to('cuda')
+                # model_eval = model.to('cuda')
 
                 correct_wo_attack = np.array(
                     [idx in correct_idxs for idx in index]
                 )
 
-                after_attack_prediction = model(batch).logits.argmax(dim=-1).cpu()
+                after_attack_prediction = model_eval(batch).logits.argmax(dim=-1).cpu()
                 wo_attack_pred = torch.squeeze(torch.tensor(wo_attack_prediction.set_index('pic_index').iloc[index].values))
                 fr = after_attack_prediction != wo_attack_pred
                 asr = after_attack_prediction != label

@@ -5,3 +5,4 @@ plot_example.ipynb
 test.ipynb
 notebooks/test.ipynb
 notebooks/.ipynb_checkpoints
+*.jpeg
