@@ -107,7 +107,8 @@ def evaluate_asr():
 
     for i, (weihts, model) in enumerate(ImageNetModels):
         weights = weihts.IMAGENET1K_V1
-        model = model(weights=weihts)
+        model_eval = model(weights=weihts)
+        model_train = model(weights=weihts)
         train_dataset_ = IndexedDataset(
             train_dataset, transform=weihts.IMAGENET1K_V1.transforms()
         )
@@ -125,7 +126,7 @@ def evaluate_asr():
         print(model_current)
 
         attack, _ = uap_sgd(
-            model,
+            model_train,
             train_loader,
             nb_epoch=10,
             eps=1,
@@ -163,7 +164,8 @@ def evaluate_asr():
             pin_memory=False
         )
 
-        model.eval()
+        model_eval.eval()
+        model_eval.to('cuda')
 
         with torch.no_grad():
             wo_attack_correct_count = 0
@@ -186,7 +188,7 @@ def evaluate_asr():
                     [idx in correct_idxs for idx in index]
                 )
 
-                after_attack_prediction = model(batch).argmax(dim=-1).cpu()
+                after_attack_prediction = model_eval(batch).argmax(dim=-1).cpu()
                 wo_attack_pred = torch.squeeze(torch.tensor(wo_attack_prediction.set_index('pic_index').iloc[index].values))
                 fr = after_attack_prediction != wo_attack_pred
                 asr = after_attack_prediction != label

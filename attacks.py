@@ -30,6 +30,7 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
     delta.data  adversarial perturbation
     losses      losses per iteration
     '''
+    print(model.training)
     _, (index, x_val, y_val) = next(enumerate(loader))
     batch_size = len(x_val)
     if uap_init is None:
@@ -74,10 +75,7 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
             if y_target is not None: y_val = torch.ones(size = y_val.shape, dtype = y_val.dtype) * y_target
             
             perturbed = torch.clamp((x_val + batch_delta).cuda(), 0, 1)
-            if isinstance(model, ViTForImageClassification):
-                outputs = model(perturbed)
-            else:
-                outputs = model(perturbed)
+            outputs = model(perturbed)
             
             # loss function value
             if layer_name is None:
