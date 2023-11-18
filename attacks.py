@@ -91,7 +91,7 @@ def uap_sgd(model, loader, nb_epoch, eps, beta = 12, step_decay = 0.8, y_target 
             if y_target is not None: loss = -loss # minimize loss for targeted UAP
             losses.append(torch.mean(loss))
             loss.backward()
-            # batch_delta.grad.data.zero_()
+            # # batch_delta.grad.data.zero_()
             batch_delta.data = delta.unsqueeze(0).repeat([x_val.shape[0], 1, 1, 1])
             
             # batch update
