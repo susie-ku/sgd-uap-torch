@@ -10,6 +10,7 @@ import random
 import seaborn as sns
 import torch
 # from torch.optim.optimizer import zero_grad
+from sklearn.model_selection import train_test_split
 
 from flags import parse_handle
 from torch.utils.data import DataLoader
@@ -73,11 +74,24 @@ def evaluate_asr():
             Datasets.ImageNet
         )
     )
+
     train_dataset, eval_dataset = torch.utils.data.random_split(
         dataset,
         [args.attack_train_split_num, len(dataset) - args.attack_train_split_num],
         generator=torch.Generator().manual_seed(42)
     )
+
+    targets = [items[2] for items in eval_dataset]
+    val_idx, test_idx = train_test_split(
+        np.arange(len(targets)),
+        test_size=len(eval_dataset) - 5000,
+        shuffle=True,
+        stratify=targets,
+        random_state=42
+    )
+
+    val_sampler = torch.utils.data.SubsetRandomSampler(val_idx)
+    test_sampler = torch.utils.data.SubsetRandomSampler(test_idx)
 
     paths_indx = []
     for file in sorted(os.listdir(args.path_to_indx)):
@@ -155,11 +169,12 @@ def evaluate_asr():
             transform=weights_eval
         )
 
-        eval_loader = DataLoader(
+        test_loader = DataLoader(
             dataset=eval_dataset_,
+            sampler=test_sampler,
             batch_size=args.batch_size,
             shuffle=False,
-            drop_last=True,
+            drop_last=False,
             num_workers=4,
             pin_memory=False
         )
@@ -178,7 +193,7 @@ def evaluate_asr():
             correct_idxs = set(pd.read_csv(paths_indx[i])['0'])
             wo_attack_prediction=pd.read_csv(paths_answrs[i])
 
-            for it, (index, batch, label) in enumerate(tqdm(eval_loader)):
+            for it, (index, batch, label) in enumerate(tqdm(test_loader)):
                 # if it > 1:
                 #     break
                 batch = batch.cuda()
@@ -273,11 +288,12 @@ def evaluate_asr():
         eval_dataset_ = TransformerIndexedDataset(eval_dataset, Datasets.ImageNet)
         eval_dataset_.dataset.transform = transform
 
-        eval_loader = DataLoader(
+        test_loader = DataLoader(
             dataset=eval_dataset_,
+            sampler=test_sampler,
             batch_size=args.batch_size,
             shuffle=False,
-            drop_last=True,
+            drop_last=False,
             num_workers=4,
             pin_memory=False
         )
@@ -297,7 +313,7 @@ def evaluate_asr():
             correct_idxs = set(pd.read_csv(paths_indx[i])['0'])
             wo_attack_prediction=pd.read_csv(paths_answrs[i])
 
-            for it, (index, batch, label) in enumerate(tqdm(eval_loader)):
+            for it, (index, batch, label) in enumerate(tqdm(test_loader)):
                 # if it > 1:
                 #     break
                 batch = batch.cuda()
